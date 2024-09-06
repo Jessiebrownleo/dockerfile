@@ -1,24 +1,47 @@
-# Stage 1: Build the Next.js app
-FROM node:18-alpine AS build
+# Stage 1: Build Stage
+FROM node:18-alpine AS builder
 
+# Install necessary dependencies for building the project
+RUN apk add --no-cache libc6-compat
+
+# Set the working directory to /app
 WORKDIR /app
 
-COPY package*.json ./
+# Copy package.json and package-lock.json (or yarn.lock) and install dependencies
+COPY package.json package-lock.json ./
 RUN npm install
 
+# Copy all project files
 COPY . .
+
+# Build the Next.js application
 RUN npm run build
 
-# Stage 2: Run the app with a lightweight environment
+# Stage 2: Production Stage
 FROM node:18-alpine
 
+# Install runtime dependencies and add a non-root user
+RUN apk update && apk upgrade && apk add dumb-init && adduser -D nextuser
+
+# Set the working directory
 WORKDIR /app
 
-COPY --from=build /app/.next ./.next
-COPY --from=build /app/public ./public
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/package.json ./package.json
+# Copy the necessary files from the build stage
+COPY --chown=nextuser:nextuser --from=builder /app/public ./public
+COPY --chown=nextuser:nextuser --from=builder /app/.next ./.next
 
+# If you need to use a custom server, copy it as well
+# COPY --chown=nextuser:nextuser --from=builder /app/server.js ./server.js
+
+# Switch to non-root user
+USER nextuser
+
+# Expose the application port
 EXPOSE 3000
-CMD ["npm", "start"]
+
+# Set environment variables
+ENV HOST=0.0.0.0 PORT=3000 NODE_ENV=production
+
+# Start the application
+CMD ["dumb-init", "node", "server.js"]
 
